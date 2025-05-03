@@ -1,6 +1,4 @@
-# Wasteland PVE System Complete
-
-A comprehensive PVE (Player vs Environment) system for DayZ that enhances gameplay by removing player damage, vehicle damage, and other PVP elements to create a pure survival experience.
+# Wasteland No Vehicle Damage Complete
 
 ## Features
 
