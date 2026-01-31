@@ -1,0 +1,74 @@
+[h1] No Vehicle Damage Complete [/h1] 
+[h2] Works With 1.26+ [/h2]
+
+[b]This Mod Does not effect server performance[/b]
+
+[h1] Features [/h1]
+
+[h3] 🛡️ Complete Vehicle Protection [/h3]
+[list]
+[*] [b]No Collision Damage[/b]: Vehicles take no damage from crashing into walls, trees, or other cars.
+[*] [b]Bullet & Explosion Immunity[/b]: Vehicles are immune to gunfire, grenades, and melee attacks.
+[*] [b]Indestructible Tires[/b]: Tires will automatically repair themselves if damaged.
+[*] [b]Protected Components[/b]: Engine, radiator, and fuel tank cannot be ruined.
+[*] [b]Visual Protection[/b]: Vehicles always look pristine (No shattered glass or ruined parts).
+[/list]
+
+[h3] ♾️ Infinite Maintenance [/h3]
+[list]
+[*] [b]Infinite Fuel[/b]: Fuel tank automatically refills.
+[*] [b]Infinite Fluids[/b]: Oil, Coolant, and Brake Fluid automatically keep themselves topped up.
+[*] [b]Infinite Battery[/b]: Battery never drains and stays at max charge.
+[/list]
+
+[h3] 🤸 Flip Vehicle Action [/h3]
+[list]
+[*] [b]Easy Recovery[/b]: Walk up to any flipped vehicle (upside down or on its side).
+[*] [b]Context Action[/b]: A "Flip Vehicle" action appears in the interaction menu.
+[*] [b]Safe Flipping[/b]: The car is gently uprighted and lifted slightly to prevent clipping.
+[/list]
+
+[h3] 🏊 Environmental Protection [/h3]
+[list]
+[*] [b]Waterproof Engines[/b]: Engines do not take damage when submerged.
+[*] [b]No Drowning[/b]: Players inside vehicles will not drown underwater.
+[*] [b]Safe Collisions[/b]: Players and Zombies do not take damage/impact from vehicle collisions.
+[/list]
+
+[h1] ⚙️ Server Configuration [/h1]
+The mod creates a JSON configuration file on the first server start:
+[code]$profile:WLM_NoVehicleDamageComplete/settings.json[/code]
+
+You can toggle features on/off individually:
+[code]
+{
+    "EnableNoVehicleDamage": 1,
+    "EnableInfiniteFuel": 1,
+    "EnableInfiniteBattery": 1,
+    "EnableIndestructibleTires": 1,
+    "EnableFlipVehicle": 1,
+    "EnablePlayerDrowningProtection": 1,
+    "EnablePlayerCollisionProtection": 1,
+    "EnableZombieCollisionProtection": 1,
+    "EnableVehicleWaterDamageProtection": 1
+}
+[/code]
+
+[h1] Other Info [/h1]
+[list]
+[*] This is not a Server Side Mod
+[*] The Key is included
+[*] No Re-Packs. Repacking is a cancer of the DayZ community.
+[/list]
+
+[h1] Other Mods: [/h1]
+[h3] PVE System Basic: https://steamcommunity.com/sharedfiles/filedetails/?id=3166805289 [/h3]
+[h3] No Vehicle Damage Basic: https://steamcommunity.com/sharedfiles/filedetails/?id=3249625268 [/h3]
+
+[h1] A new community for questions about my mods! [/h1]
+[h1] [url=https://discord.gg/eGE4AswVBd] Discord [/url] [/h1]
+
+[h1] Credits [/h1]
+[list]
+[*] Inkihh - For the wheel smoke effect script
+[/list]
