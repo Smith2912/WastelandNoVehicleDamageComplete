@@ -11,6 +11,8 @@ class WastelandSettings
     bool EnablePlayerCollisionProtection = true;
     bool EnableZombieCollisionProtection = true;
     bool EnableVehicleWaterDamageProtection = true;
+    bool DebugRepairLogs = false;
+    bool DebugCollisionLogs = false;
 
     static WastelandSettings Get()
     {

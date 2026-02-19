@@ -43,8 +43,6 @@ class ActionFlipVehicle: ActionInteractBase
 
 		if ( car )
 		{
-            Print("[WLM] ActionFlipVehicle: Flipping car " + car);
-            
 			// 1. Reset Velocities first
 			dBodySetAngularVelocity(car, "0 0 0");
 			SetVelocity(car, "0 0 0");
@@ -74,8 +72,6 @@ class ActionFlipVehicle: ActionInteractBase
 			car.SetOrientation(ori);
             
 			car.SetSynchDirty();
-            
-            Print("[WLM] ActionFlipVehicle: Flip Complete");
 		}
 	}
 };

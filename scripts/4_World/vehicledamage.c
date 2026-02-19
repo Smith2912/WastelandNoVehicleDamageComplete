@@ -1,34 +1,81 @@
 modded class CarScript
 {
+    float m_MaintenanceTimer;
+    float m_NoDamageRefreshTimer;
+    float m_CrewProtectTimer;
+    bool m_ContactRefreshPending;
+    int m_LastRepairDebugLogMs;
+
+    void WLM_LogCollision(string msg)
+    {
+        if (WastelandSettings.Get().DebugCollisionLogs)
+        {
+            Print("[WastelandMod][CollisionDebug][Car:" + GetType() + "] " + msg);
+        }
+    }
+
     override void OnContact( string zoneName, vector localPos, IEntity other, Contact data )
     {
-        if (GetGame().IsServer() && !WastelandSettings.Get().EnableNoVehicleDamage)
+        if (GetGame().IsServer())
+        {
+            if (WastelandSettings.Get().EnableNoVehicleDamage)
+            {
+                WLM_LogCollision("OnContact intercepted zone=" + zoneName + " impulse=" + data.Impulse.ToString());
+                SetAllowDamage(false);
+                if (GetHealthLevel() != GameConstants.STATE_PRISTINE)
+                    SetHealth(GetMaxHealth());
+
+                // Defer heavy inventory/attachment pass to OnUpdate to avoid repeated work in burst contacts.
+                m_ContactRefreshPending = true;
+                ProtectCrewFromImpact();
+                return;
+            }
+
             super.OnContact(zoneName, localPos, other, data);
+        }
     }
-    float m_MaintenanceTimer;
 
     override void OnUpdate( float dt )
     {
 		if ( GetGame().IsServer() )
 		{
+            bool noVehicleDamage = WastelandSettings.Get().EnableNoVehicleDamage;
+            if (noVehicleDamage)
+            {
+                // Keep continuously enforced.
+                SetAllowDamage(false);
+
+                m_NoDamageRefreshTimer += dt;
+                if (m_ContactRefreshPending || m_NoDamageRefreshTimer >= 0.50)
+                {
+                    if (GetHealthLevel() != GameConstants.STATE_PRISTINE)
+                        SetHealth(GetMaxHealth());
+
+                    Maintenance_RepairAttachments();
+                    Maintenance_RepairTires();
+                    m_NoDamageRefreshTimer = 0;
+                    m_ContactRefreshPending = false;
+                }
+
+                m_CrewProtectTimer += dt;
+                if (m_CrewProtectTimer >= 0.10)
+                {
+                    ProtectCrewFromImpact();
+                    m_CrewProtectTimer = 0;
+                }
+            }
+            else
+            {
+                SetAllowDamage(true);
+                m_NoDamageRefreshTimer = 0;
+                m_CrewProtectTimer = 0;
+                m_ContactRefreshPending = false;
+            }
+
+            // Lower-frequency general maintenance.
             m_MaintenanceTimer += dt;
             if (m_MaintenanceTimer >= 1.0)
             {
-                if (WastelandSettings.Get().EnableNoVehicleDamage)
-                {
-                    SetAllowDamage(false);
-                    
-                    // Heal Global
-                    if (GetHealthLevel() != GameConstants.STATE_PRISTINE)
-                        SetHealth(GetMaxHealth());
-                    
-                    Maintenance_RepairAttachments();
-                }
-                else
-                {
-                     SetAllowDamage(true);
-                }
-
                 if (WastelandSettings.Get().EnableInfiniteBattery)
                     Maintenance_Battery();
                 
@@ -97,12 +144,16 @@ modded class CarScript
     void Maintenance_Battery()
     {
         ItemBase battery = GetBattery();
-        if ( battery )
-        {
-            float maxEnergy = battery.GetCompEM().GetEnergyMax();
-            battery.GetCompEM().SetEnergy(maxEnergy);
-            m_BatteryTimer = 0;
-        }
+        if (!battery)
+            return;
+
+        ComponentEnergyManager compEM = battery.GetCompEM();
+        if (!compEM)
+            return;
+
+        float maxEnergy = compEM.GetEnergyMax();
+        compEM.SetEnergy(maxEnergy);
+        m_BatteryTimer = 0;
     }
 
     void Maintenance_RefillFluids()
@@ -135,21 +186,101 @@ modded class CarScript
     {
         array<EntityAI> attachments = new array<EntityAI>;
         GetInventory().EnumerateInventory(InventoryTraversalType.PREORDER, attachments);
-        
-        foreach(EntityAI att : attachments)
+
+        int skippedCargoCount = 0;
+        int maintainedCount = 0;
+
+        foreach (EntityAI att : attachments)
         {
-            if (att && att != this)
+            if (!att || att == this)
+                continue;
+
+            // Skip cargo content (e.g. trunk items) so only true attachments are maintained.
+            InventoryLocation invLoc = new InventoryLocation;
+            if (att.GetInventory() && att.GetInventory().GetCurrentInventoryLocation(invLoc))
             {
-                 // Force repair visual state (fixes textures/models)
-                 att.SetHealth(att.GetMaxHealth());
-                 
-                 // Prevent damage
-                 if (WastelandSettings.Get().EnableNoVehicleDamage)
-                    att.SetAllowDamage(false);
-                 else
-                    att.SetAllowDamage(true);
+                if (invLoc.GetType() == InventoryLocationType.CARGO)
+                {
+                    skippedCargoCount++;
+                    continue;
+                }
+            }
+
+            // Force repair visual state (fixes textures/models)
+            att.SetHealth(att.GetMaxHealth());
+
+            // Prevent damage for maintained attachment entities only.
+            if (WastelandSettings.Get().EnableNoVehicleDamage)
+                att.SetAllowDamage(false);
+            else
+                att.SetAllowDamage(true);
+
+            maintainedCount++;
+        }
+
+        if (WastelandSettings.Get().DebugRepairLogs)
+        {
+            int nowMs = GetGame().GetTime();
+            if (nowMs - m_LastRepairDebugLogMs >= 2000)
+            {
+                m_LastRepairDebugLogMs = nowMs;
+                Print("[WastelandMod][RepairDebug] Vehicle=" + GetType() + " maintained=" + maintainedCount.ToString() + " skippedCargo=" + skippedCargoCount.ToString());
             }
         }
+    }
+
+    void ProtectCrewFromImpact()
+    {
+        if (!WastelandSettings.Get().EnablePlayerCollisionProtection)
+            return;
+
+        int crewCount = CrewSize();
+        for (int i = 0; i < crewCount; i++)
+        {
+            Human crewHuman = CrewMember(i);
+            if (!crewHuman)
+                continue;
+
+            PlayerBase crewPlayer = PlayerBase.Cast(crewHuman);
+            if (!crewPlayer)
+                continue;
+
+            float maxHealth = crewPlayer.GetMaxHealth("", "Health");
+            float maxShock = crewPlayer.GetMaxHealth("", "Shock");
+
+            if (crewPlayer.GetHealth("", "Health") < maxHealth)
+                crewPlayer.SetHealth("", "Health", maxHealth);
+
+            if (crewPlayer.GetHealth("", "Shock") < maxShock)
+                crewPlayer.SetHealth("", "Shock", maxShock);
+        }
+    }
+
+    override void CheckContactCache()
+    {
+        if (WastelandSettings.Get().EnableNoVehicleDamage)
+        {
+            int cached = m_ContactCache.Count();
+            if (cached > 0)
+            {
+                WLM_LogCollision("CheckContactCache blocked cachedContacts=" + cached.ToString());
+            }
+            m_ContactCache.Clear();
+            return;
+        }
+
+        super.CheckContactCache();
+    }
+
+    override void DamageCrew(float dmg)
+    {
+        if (WastelandSettings.Get().EnablePlayerCollisionProtection)
+        {
+            WLM_LogCollision("DamageCrew blocked dmg=" + dmg.ToString());
+            return;
+        }
+
+        super.DamageCrew(dmg);
     }
 
 	// Prevents damage from bullets, explosions, melee, etc.
@@ -159,6 +290,11 @@ modded class CarScript
 
 		if (GetGame().IsServer() && WastelandSettings.Get().EnableNoVehicleDamage)
 		{
+            string srcType = "null";
+            if (source)
+                srcType = source.GetType();
+            WLM_LogCollision("EEHitBy intercepted type=" + damageType.ToString() + " zone=" + dmgZone + " source=" + srcType);
+
             // Force reset global health if hit
             SetHealth(GetMaxHealth());
             
@@ -168,6 +304,11 @@ modded class CarScript
             SetHealth("WindowLeft", "Health", GetMaxHealth("WindowLeft", "Health"));
             SetHealth("WindowRight", "Health", GetMaxHealth("WindowRight", "Health"));
             SetHealth("Window", "Health", GetMaxHealth("Window", "Health"));
+
+            // Re-apply attachment and tire protection immediately on hit.
+            Maintenance_RepairTires();
+            Maintenance_RepairAttachments();
+            ProtectCrewFromImpact();
 		}
 	}
     
