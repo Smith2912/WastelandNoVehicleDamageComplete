@@ -33,17 +33,6 @@ The server creates `$profile:WLM_NoVehicleDamageComplete/settings.json` on first
   "DebugCollisionLogs": false
 }
 ```
-
-Malformed/unreadable settings disable the features and report a load failure instead of silently enabling default protections. The invalid file is not overwritten. Fix it and restart. Existing valid files with omitted fields retain the documented defaults.
-
-## Source, packaging and status
-
-The editable Git repository is separate from the pack root. Pack only `P:\WastelandNoVehicleDamageComplete`, which contains root `config.cpp` and `scripts` and uses virtual prefix `WastelandNoVehicleDamageComplete`. This README, Git metadata, tests and development notes are not PBO inputs.
-
-The source targets the locally inspected DayZ 1.29 API. Other versions, custom vehicles, exact server mod stacks, multiplayer/JIP and restart behavior require their own acceptance evidence; this is not a blanket compatibility claim. Diagnostic compile PBOs are test artifacts, not signed releases. The existing installed `P:\@NoVehicleDamageComplete` package is not automatically replaced by source changes.
-
-Prior native invulnerability set by another mod, or left by an older build, cannot safely be identified as this mod's property after the fact. Do not clear arbitrary protection flags to migrate old objects. Tests and validation records are kept separately from this public repository and the packed addon.
-
 ## Credits and support
 
 The Songsmith — core logic and development. Inkihh — original wheel-smoke contributions (current effects use the stock lifecycle).
