@@ -2,8 +2,9 @@ modded class DrowningMdfr
 {
 	override bool ActivateCondition(PlayerBase player)
 	{
-        // If Drowning Protection is ENABLED, we return false to prevent the modifier from activating
-        if ( WastelandSettings.Get().EnablePlayerDrowningProtection )
+        // Preserve normal swimming damage. Only occupants of a vehicle are
+        // protected from the drowning modifier.
+        if (WastelandSettings.Get().EnablePlayerDrowningProtection && player && player.GetCommand_Vehicle())
             return false;
 
 		return super.ActivateCondition(player);
@@ -12,7 +13,7 @@ modded class DrowningMdfr
     // Safety check just in case it was already active
 	override bool DeactivateCondition(PlayerBase player)
 	{
-        if ( WastelandSettings.Get().EnablePlayerDrowningProtection )
+        if (WastelandSettings.Get().EnablePlayerDrowningProtection && player && player.GetCommand_Vehicle())
             return true;
             
 		return super.DeactivateCondition(player);

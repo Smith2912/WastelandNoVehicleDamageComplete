@@ -1,61 +1,51 @@
 # Wasteland No Vehicle Damage Complete
 
-## Overview
-This mod provides a complete "God Mode" solution for vehicles in DayZ. It ensures vehicles are indestructible, easy to maintain, and easy to recover, making it perfect for "Wasteland" style servers or high-loot PVP servers where vehicles should be assets, not burdens.
+Server-configurable vehicle protection, maintenance and recovery for DayZ. The addon must be installed on both server and clients: it adds an action and a synchronized vehicle setting.
 
-## Features
+## Behavior
 
-### 🛡️ Complete Vehicle Protection
-- **No Collision Damage**: Vehicles take no damage from crashing into walls, trees, or other cars.
-- **Bullet & Explosion Immunity**: Vehicles are immune to gunfire, grenades, and melee attacks.
-- **Indestructible Tires**: Tires will automatically repair themselves if damaged.
-- **Protected Components**: Engine, radiator, and fuel tank cannot be ruined.
+- Vehicle protection gates damage and maintains direct vehicle attachments. Native collision processing, battery updates, simulation, lights and death handling remain intact.
+- Occupant collision protection is independent of vehicle protection. Pedestrian and infected collision protection suppresses native transport-hit registration, not unrelated hit/death notifications.
+- Infinite battery uses the native energy-addition path, including displayed quantity updates. Turning it off retains vanilla alternator charging and headlight drain.
+- Infinite fuel also replenishes coolant, oil and brake fluid.
+- The master vehicle protection setting includes tire maintenance. The separate tire option also works when master protection is off.
+- Cargo and attachments on cargo items are excluded. Protection owned by this mod is released when a part detaches; pre-existing invulnerability is preserved.
+- Water protection controls the stock engine drowning timer. When disabled, this mod temporarily lifts only its own damage gate around the stock drowning update.
+- Player drowning protection applies only to vehicle occupants. On-foot swimming remains vanilla.
+- Flip recovery uses native tipped-vehicle detection and actual vehicle bounds, not client-submitted cursor coordinates. It rejects ruined cars, invalid target relationships, occupied/moving vehicles and obstructed destinations. An intact car may be targeted through a ruined attached part. Flip availability is synchronized to clients.
 
-### ♾️ Infinite Maintenance
-- **Infinite Fuel**: Fuel tank automatically refills.
-- **Infinite Fluids**: Oil, Coolant, and Brake Fluid automatically keep themselves topped up.
-- **Infinite Battery**: Battery never drains and stays at max charge.
+## Settings
 
-### 🤸 Flip Vehicle Action
-- **Easy Recovery**: Walk up to any flipped vehicle (upside down or on its side).
-- **Context Action**: A "Flip Vehicle" action appears in the interaction menu.
-- **Safe Flipping**: The car is gently uprighted and lifted slightly to prevent clipping.
-
-### 🏊 Environmental Protection
-- **Waterproof Engines**: Engines do not take damage when submerged.
-- **No Drowning**: Players inside vehicles will not drown underwater (Configurable).
-- **Collision Immunity**: Players and Zombies do not take damage/impact from vehicle collisions (Configurable).
-
-## ⚙️ Server Configuration
-The mod creates a JSON configuration file on the first server start:
-`$profile:WLM_NoVehicleDamageComplete/settings.json`
-
-You can toggle features on/off individually:
+The server creates `$profile:WLM_NoVehicleDamageComplete/settings.json` on first initialization. Existing field names are retained. Restart after editing.
 
 ```json
 {
-    "EnableNoVehicleDamage": 1,        // Master toggle for vehicle god mode
-    "EnableInfiniteFuel": 1,           // Toggle auto-refuel/fluids
-    "EnableInfiniteBattery": 1,        // Toggle infinite battery
-    "EnableIndestructibleTires": 1,    // Toggle tire auto-repair
-    "EnableFlipVehicle": 1,            // Enable/Disable the Flip Action
-    "EnablePlayerDrowningProtection": 1, // Prevent drowning (Configurable)
-    "EnableVehicleWaterDamageProtection": 1, // Prevent engine water damage
-    "EnablePlayerCollisionProtection": 1, // Prevent player physics damage from cars
-    "EnableZombieCollisionProtection": 1  // Prevent zombie physics interaction with cars
+  "EnableNoVehicleDamage": true,
+  "EnableInfiniteFuel": true,
+  "EnableInfiniteBattery": true,
+  "EnableIndestructibleTires": true,
+  "EnableFlipVehicle": true,
+  "EnablePlayerDrowningProtection": true,
+  "EnablePlayerCollisionProtection": true,
+  "EnableZombieCollisionProtection": true,
+  "EnableVehicleWaterDamageProtection": true,
+  "DebugRepairLogs": false,
+  "DebugCollisionLogs": false
 }
 ```
-*Changes require a server restart to take effect.*
 
-## Compatibility
-- DayZ Version: 1.15+ to Latest
-- Works with most expanded interaction mods.
-- Safe to add/remove mid-wipe (Vehicles will simply revert to taking damage).
+Malformed/unreadable settings disable the features and report a load failure instead of silently enabling default protections. The invalid file is not overwritten. Fix it and restart. Existing valid files with omitted fields retain the documented defaults.
 
-## Credits
-- **The Songsmith**: Core logic and development.
-- **Inkihh**: Wheel smoke effects and particles.
+## Source, packaging and status
 
-## Support
-For issues, questions, or feature requests, please open an issue on the GitHub repository.
-You are free to use this mod on your server. Repacking is allowed with credit.
+At the user's direction, editable source remains `P:\WastelandNoVehicleDamageComplete`; it is a mixed repository, **not a folder to pack wholesale**. Runtime input is root `config.cpp` plus `scripts` only, using virtual prefix `WastelandNoVehicleDamageComplete`. Documentation, Tests and .git must stay outside the PBO.
+
+The source targets the locally inspected DayZ 1.29 API. Other versions, custom vehicles, exact server mod stacks, multiplayer/JIP and restart behavior require their own acceptance evidence; this is not a blanket compatibility claim. Diagnostic compile PBOs are test artifacts, not signed releases. The existing installed `P:\@NoVehicleDamageComplete` package is not automatically replaced by source changes.
+
+See [validation results](docs/VALIDATION_20260905.md), [test procedure](Tests/README.md), [repair contract](docs/REPAIR_PLAN.md) and [release checklist](RELEASE_CHECKLIST.md). Prior native invulnerability set by another mod, or left by an older build, cannot safely be identified as this mod's property after the fact. Do not clear arbitrary protection flags to migrate old objects.
+
+## Credits and support
+
+The Songsmith — core logic and development. Inkihh — original wheel-smoke contributions (current effects use the stock lifecycle).
+
+Report issues at the GitHub repository. Repacking is allowed with credit. No source edit constitutes deployment or proof of live gameplay behavior.

@@ -27,17 +27,5 @@ modded class DayZPlayerImplement
 		super.EOnContact(other, extra);
 	}
 
-	override void EEHitBy(TotalDamageResult damageResult, int damageType, EntityAI source, int component, string dmgZone, string ammo, vector modelPos, float speedCoef)
-	{
-		if (WastelandSettings.Get().EnablePlayerCollisionProtection)
-		{
-			if (source && source.IsInherited(Transport))
-			{
-				WLM_LogPlayerCollision("EEHitBy blocked transport source=" + source.GetType() + " zone=" + dmgZone);
-				return;
-			}
-		}
-
-		super.EEHitBy(damageResult, damageType, source, component, dmgZone, ammo, modelPos, speedCoef);
-	}
+    // Keep EEHitBy native: it is an after-damage notification, not a veto.
 }

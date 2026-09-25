@@ -1,172 +1,212 @@
+// Own only flags changed by this mod; entity pointers are deliberately weak.
+class WLM_NVD_DamageGuard
+{
+    EntityAI Target;
+    protected bool m_Changed;
+    void WLM_NVD_DamageGuard(EntityAI target) { Target = target; }
+
+    void Protect()
+    {
+        if (Target && Target.GetAllowDamage())
+        {
+            m_Changed = true;
+            Target.SetAllowDamage(false);
+        }
+    }
+
+    void Release()
+    {
+        if (Target && m_Changed)
+            Target.SetAllowDamage(true);
+        m_Changed = false;
+    }
+
+    bool IsOwned() { return m_Changed; }
+}
+
 modded class CarScript
 {
-    float m_MaintenanceTimer;
-    float m_NoDamageRefreshTimer;
-    bool m_ContactRefreshPending;
-    int m_LastRepairDebugLogMs;
-    static const float WLM_CONTACT_MIN_IMPULSE = 25.0;
+    protected float m_WLMMaintenanceTimer;
+    protected float m_WLMRepairTimer;
+    protected bool m_WLMFlipEnabled;
+    protected int m_WLMLastRepairLogMs;
+    protected int m_WLMLastCrewLogMs;
+    protected ref WLM_NVD_DamageGuard m_WLMVehicleGuard;
+    protected ref array<ref WLM_NVD_DamageGuard> m_WLMAttachmentGuards;
 
-    void WLM_LogCollision(string msg)
+    void CarScript()
     {
-        if (WastelandSettings.Get().DebugCollisionLogs)
+        m_WLMAttachmentGuards = new array<ref WLM_NVD_DamageGuard>;
+        // False until server state arrives, including for join-in-progress.
+        RegisterNetSyncVariableBool("m_WLMFlipEnabled");
+    }
+
+    override void EEInit()
+    {
+        super.EEInit();
+        if (GetGame().IsServer())
         {
-            Print("[WastelandMod][CollisionDebug][Car:" + GetType() + "] " + msg);
+            WLM_UpdateProtection();
+            WLM_UpdateFlipSetting();
         }
     }
 
-    bool WLM_IsSignificantContact(Contact data)
+    bool WLM_IsFlipEnabled()
     {
-        float impulseLen = Math.AbsFloat(data.Impulse);
-        return (impulseLen >= WLM_CONTACT_MIN_IMPULSE);
+        if (GetGame().IsServer())
+            return WastelandSettings.Get().EnableFlipVehicle;
+        return m_WLMFlipEnabled;
     }
 
-    override void OnContact( string zoneName, vector localPos, IEntity other, Contact data )
+    protected void WLM_UpdateFlipSetting()
     {
+        bool enabled = WastelandSettings.Get().EnableFlipVehicle;
+        if (m_WLMFlipEnabled != enabled)
+        {
+            m_WLMFlipEnabled = enabled;
+            SetSynchDirty();
+        }
+    }
+
+    protected void WLM_UpdateProtection()
+    {
+        if (!m_WLMVehicleGuard)
+            m_WLMVehicleGuard = new WLM_NVD_DamageGuard(this);
+        if (WastelandSettings.Get().EnableNoVehicleDamage)
+            m_WLMVehicleGuard.Protect();
+        else
+        {
+            m_WLMVehicleGuard.Release();
+            WLM_ReleaseAttachments();
+        }
+    }
+
+    protected void WLM_ProtectAttachment(EntityAI item)
+    {
+        if (!item || item.GetHierarchyParent() != this)
+            return;
+        foreach (WLM_NVD_DamageGuard existing : m_WLMAttachmentGuards)
+        {
+            if (existing.Target == item)
+            {
+                existing.Protect();
+                return;
+            }
+        }
+        WLM_NVD_DamageGuard guard = new WLM_NVD_DamageGuard(item);
+        guard.Protect();
+        m_WLMAttachmentGuards.Insert(guard);
+    }
+
+    protected void WLM_ReleaseAttachments(EntityAI detached = null)
+    {
+        for (int i = m_WLMAttachmentGuards.Count() - 1; i >= 0; i--)
+        {
+            WLM_NVD_DamageGuard guard = m_WLMAttachmentGuards[i];
+            if (!detached || !guard.Target || guard.Target == detached)
+            {
+                guard.Release();
+                m_WLMAttachmentGuards.Remove(i);
+            }
+        }
+    }
+
+    override void EEItemAttached(EntityAI item, string slot_name)
+    {
+        super.EEItemAttached(item, slot_name);
+        if (GetGame().IsServer() && WastelandSettings.Get().EnableNoVehicleDamage)
+            WLM_ProtectAttachment(item);
+    }
+
+    override void EEItemDetached(EntityAI item, string slot_name)
+    {
+        if (GetGame().IsServer())
+            WLM_ReleaseAttachments(item);
+        super.EEItemDetached(item, slot_name);
+    }
+
+    override void EEDelete(EntityAI parent)
+    {
+        if (GetGame() && GetGame().IsServer())
+        {
+            WLM_ReleaseAttachments();
+            if (m_WLMVehicleGuard)
+                m_WLMVehicleGuard.Release();
+        }
+        super.EEDelete(parent);
+    }
+
+    override void OnUpdate(float dt)
+    {
+        bool resetDrowning = false;
+        bool resumeProtection = false;
+        if (GetGame().IsServer())
+        {
+            WLM_UpdateProtection();
+            WastelandSettings settings = WastelandSettings.Get();
+            if (GetGame().GetWaterDepth(GetEnginePosWS()) > 0)
+            {
+                resetDrowning = settings.EnableVehicleWaterDamageProtection;
+                if (resetDrowning)
+                    m_DrownTime = 0;
+                else if (settings.EnableNoVehicleDamage && m_WLMVehicleGuard.IsOwned())
+                {
+                    // Exempt stock drowning from our gate, not third-party protection.
+                    m_WLMVehicleGuard.Release();
+                    resumeProtection = true;
+                }
+            }
+        }
+
+        // Keep alternator, lights, braking and drowning on their native path.
+        super.OnUpdate(dt);
         if (!GetGame().IsServer())
             return;
+        if (resumeProtection)
+            m_WLMVehicleGuard.Protect();
+        if (resetDrowning)
+            m_DrownTime = 0;
 
-        WastelandSettings settings = WastelandSettings.Get();
-        if (!settings || !settings.EnableNoVehicleDamage)
+        m_WLMRepairTimer += dt;
+        if (m_WLMRepairTimer >= 0.5)
         {
-            super.OnContact(zoneName, localPos, other, data);
-            return;
+            m_WLMRepairTimer = 0;
+            WLM_UpdateFlipSetting();
+            if (WastelandSettings.Get().EnableNoVehicleDamage)
+                Maintenance_RepairAttachments();
+            if (WastelandSettings.Get().EnableNoVehicleDamage || WastelandSettings.Get().EnableIndestructibleTires)
+                Maintenance_RepairTires();
         }
 
-        // 1.29 hardening: ignore tiny contact jitter to reduce callback spam side-effects.
-        if (!WLM_IsSignificantContact(data))
+        m_WLMMaintenanceTimer += dt;
+        if (m_WLMMaintenanceTimer >= 1.0)
         {
-            super.OnContact(zoneName, localPos, other, data);
-            return;
+            m_WLMMaintenanceTimer = 0;
+            if (WastelandSettings.Get().EnableInfiniteBattery)
+                Maintenance_Battery();
+            if (WastelandSettings.Get().EnableInfiniteFuel)
+                Maintenance_RefillFluids();
         }
-
-        WLM_LogCollision("OnContact intercepted zone=" + zoneName + " impulse=" + data.Impulse.ToString());
-        SetAllowDamage(false);
-        if (GetHealthLevel() != GameConstants.STATE_PRISTINE)
-            SetHealth(GetMaxHealth());
-
-        // Defer heavy inventory/attachment pass to OnUpdate to avoid repeated work in burst contacts.
-        m_ContactRefreshPending = true;
-    }
-
-    override void OnUpdate( float dt )
-    {
-		if ( GetGame().IsServer() )
-		{
-            bool noVehicleDamage = WastelandSettings.Get().EnableNoVehicleDamage;
-            if (noVehicleDamage)
-            {
-                // Keep continuously enforced.
-                SetAllowDamage(false);
-
-                m_NoDamageRefreshTimer += dt;
-                if (m_ContactRefreshPending || m_NoDamageRefreshTimer >= 0.50)
-                {
-                    if (GetHealthLevel() != GameConstants.STATE_PRISTINE)
-                        SetHealth(GetMaxHealth());
-
-                    Maintenance_RepairAttachments();
-                    Maintenance_RepairTires();
-                    m_NoDamageRefreshTimer = 0;
-                    m_ContactRefreshPending = false;
-                }
-            }
-            else
-            {
-                SetAllowDamage(true);
-                m_NoDamageRefreshTimer = 0;
-                m_ContactRefreshPending = false;
-            }
-
-            // Lower-frequency general maintenance.
-            m_MaintenanceTimer += dt;
-            if (m_MaintenanceTimer >= 1.0)
-            {
-                if (WastelandSettings.Get().EnableInfiniteBattery)
-                    Maintenance_Battery();
-                
-                if (WastelandSettings.Get().EnableInfiniteFuel)
-                    Maintenance_RefillFluids();
-                
-                if (WastelandSettings.Get().EnableIndestructibleTires)
-                    Maintenance_RepairTires();
-                
-                m_MaintenanceTimer = 0;
-            }
-
-			// --- Drowning Logic ---
-			if ( GetGame().GetWaterDepth( GetEnginePosWS() ) > 0 )
-			{
-                // Only accumulate drown time if protection is DISABLED
-                if ( !WastelandSettings.Get().EnableVehicleWaterDamageProtection )
-                {
-				    m_DrownTime += dt;
-                    if ( m_DrownTime > DROWN_ENGINE_THRESHOLD )
-                    {
-                        // *dt to get damage per second
-                        AddHealth( "Engine", "Health", -DROWN_ENGINE_DAMAGE * dt);
-                        SetEngineZoneReceivedHit(true);
-                    }
-                }
-                else
-                {
-                    m_DrownTime = 0;
-                }
-			}
-			else
-			{
-				m_DrownTime = 0;
-			}
-		}
-
-		// For visualisation of brake lights for all players
-		float brake_coef = GetBrake();
-		if ( brake_coef > 0 )
-		{
-			if ( !m_BrakesArePressed )
-			{
-				m_BrakesArePressed = true;
-				SetSynchDirty();
-				OnBrakesPressed();
-			}
-		}
-		else
-		{
-			if ( m_BrakesArePressed )
-			{
-				m_BrakesArePressed = false;
-				SetSynchDirty();
-				OnBrakesReleased();
-			}
-		}
-		
-		if ( (!GetGame().IsDedicatedServer()) && m_ForceUpdateLights )
-		{
-			UpdateLights();
-			m_ForceUpdateLights = false;
-		}
     }
 
     void Maintenance_Battery()
     {
         ItemBase battery = GetBattery();
-        if (!battery)
+        if (!battery || !battery.GetCompEM())
             return;
-
-        ComponentEnergyManager compEM = battery.GetCompEM();
-        if (!compEM)
-            return;
-
-        float maxEnergy = compEM.GetEnergyMax();
-        compEM.SetEnergy(maxEnergy);
-        m_BatteryTimer = 0;
+        ComponentEnergyManager energy = battery.GetCompEM();
+        float missing = energy.GetEnergyMax() - energy.GetEnergy();
+        if (missing > 0)
+            energy.AddEnergy(missing);
+        // Native charging/drain still owns m_BatteryTimer.
     }
 
     void Maintenance_RefillFluids()
     {
-        if ( GetFluidFraction( CarFluid.FUEL ) < 0.98 ) Fill( CarFluid.FUEL, GetFluidCapacity( CarFluid.FUEL ) );
-        if ( GetFluidFraction( CarFluid.COOLANT ) < 0.98 ) Fill( CarFluid.COOLANT, GetFluidCapacity( CarFluid.COOLANT ) );
-        if ( GetFluidFraction( CarFluid.OIL ) < 0.98 ) Fill( CarFluid.OIL, GetFluidCapacity( CarFluid.OIL ) );
-        if ( GetFluidFraction( CarFluid.BRAKE ) < 0.98 ) Fill( CarFluid.BRAKE, GetFluidCapacity( CarFluid.BRAKE ) );
+        if (GetFluidFraction(CarFluid.FUEL) < 0.98) Fill(CarFluid.FUEL, GetFluidCapacity(CarFluid.FUEL));
+        if (GetFluidFraction(CarFluid.COOLANT) < 0.98) Fill(CarFluid.COOLANT, GetFluidCapacity(CarFluid.COOLANT));
+        if (GetFluidFraction(CarFluid.OIL) < 0.98) Fill(CarFluid.OIL, GetFluidCapacity(CarFluid.OIL));
+        if (GetFluidFraction(CarFluid.BRAKE) < 0.98) Fill(CarFluid.BRAKE, GetFluidCapacity(CarFluid.BRAKE));
     }
 
     void Maintenance_RepairTires()
@@ -174,234 +214,58 @@ modded class CarScript
         for (int i = 0; i < WheelCount(); i++)
         {
             CarWheel wheel = CarWheel.Cast(WheelGetEntity(i));
-            if (wheel)
-            {
-                // Force repair visual state (inflates tire)
+            if (wheel && wheel.GetHealth() < wheel.GetMaxHealth())
                 wheel.SetHealth(wheel.GetMaxHealth());
-                // Prevent damage
-                if (WastelandSettings.Get().EnableNoVehicleDamage)
-                    wheel.SetAllowDamage(false);
-                else
-                    wheel.SetAllowDamage(true);
-            }
         }
     }
 
     void Maintenance_RepairAttachments()
     {
-        array<EntityAI> attachments = new array<EntityAI>;
-        GetInventory().EnumerateInventory(InventoryTraversalType.PREORDER, attachments);
-        EntityAI vehicleBattery = GetBattery();
-        bool preserveBatteryCharging = (vehicleBattery != null) && !WastelandSettings.Get().EnableInfiniteBattery;
-
-        int skippedCargoCount = 0;
-        int skippedBatteryCount = 0;
-        int maintainedCount = 0;
-
-        foreach (EntityAI att : attachments)
+        // Also clean up inventory transitions made by other mods.
+        for (int i = m_WLMAttachmentGuards.Count() - 1; i >= 0; i--)
         {
-            if (!att || att == this)
-                continue;
-
-            if (preserveBatteryCharging && att == vehicleBattery)
+            WLM_NVD_DamageGuard guard = m_WLMAttachmentGuards[i];
+            if (!guard.Target || guard.Target.GetHierarchyParent() != this)
             {
-                // Let vanilla alternator logic manage charge when the infinite battery feature is off.
-                if (WastelandSettings.Get().EnableNoVehicleDamage)
-                    att.SetAllowDamage(false);
-                else
-                    att.SetAllowDamage(true);
-
-                skippedBatteryCount++;
-                continue;
+                guard.Release();
+                m_WLMAttachmentGuards.Remove(i);
             }
-
-            // Skip cargo content (e.g. trunk items) so only true attachments are maintained.
-            InventoryLocation invLoc = new InventoryLocation;
-            if (att.GetInventory() && att.GetInventory().GetCurrentInventoryLocation(invLoc))
-            {
-                if (invLoc.GetType() == InventoryLocationType.CARGO)
-                {
-                    skippedCargoCount++;
-                    continue;
-                }
-            }
-
-            // Force repair visual state (fixes textures/models)
-            att.SetHealth(att.GetMaxHealth());
-
-            // Prevent damage for maintained attachment entities only.
-            if (WastelandSettings.Get().EnableNoVehicleDamage)
-                att.SetAllowDamage(false);
-            else
-                att.SetAllowDamage(true);
-
-            maintainedCount++;
         }
-
-        if (WastelandSettings.Get().DebugRepairLogs)
+        for (int index = 0; index < GetInventory().AttachmentCount(); index++)
         {
-            int nowMs = GetGame().GetTime();
-            if (nowMs - m_LastRepairDebugLogMs >= 2000)
-            {
-                m_LastRepairDebugLogMs = nowMs;
-                Print("[WastelandMod][RepairDebug] Vehicle=" + GetType() + " maintained=" + maintainedCount.ToString() + " skippedCargo=" + skippedCargoCount.ToString() + " skippedBattery=" + skippedBatteryCount.ToString());
-            }
+            EntityAI item = GetInventory().GetAttachmentFromIndex(index);
+            if (!item)
+                continue;
+            WLM_ProtectAttachment(item);
+            if (item == GetBattery() && !WastelandSettings.Get().EnableInfiniteBattery)
+                continue;
+            if (item.GetHealth() < item.GetMaxHealth())
+                item.SetHealth(item.GetMaxHealth());
+        }
+        int now = GetGame().GetTime();
+        if (WastelandSettings.Get().DebugRepairLogs && now - m_WLMLastRepairLogMs >= 2000)
+        {
+            m_WLMLastRepairLogMs = now;
+            Print("[WastelandMod][RepairDebug] " + GetType() + " directAttachments=" + GetInventory().AttachmentCount());
         }
     }
 
-    override void CheckContactCache()
-    {
-        if (WastelandSettings.Get().EnableNoVehicleDamage)
-        {
-            int cached = m_ContactCache.Count();
-            if (cached > 0)
-            {
-                WLM_LogCollision("CheckContactCache blocked cachedContacts=" + cached.ToString());
-            }
-            m_ContactCache.Clear();
-            return;
-        }
-
-        super.CheckContactCache();
-    }
-
+    // Inherit contact caching, post-simulation, hit and killed handling.
+    // Stock computes crew damage before vehicle damage is gated.
     override void DamageCrew(float dmg)
     {
-        if (WastelandSettings.Get().EnablePlayerCollisionProtection)
+        if (!WastelandSettings.Get().EnablePlayerCollisionProtection)
+            super.DamageCrew(dmg);
+        else if (WastelandSettings.Get().DebugCollisionLogs && GetGame().GetTime() - m_WLMLastCrewLogMs >= 2000)
         {
-            WLM_LogCollision("DamageCrew blocked dmg=" + dmg.ToString());
-            return;
+            m_WLMLastCrewLogMs = GetGame().GetTime();
+            Print("[WastelandMod][CollisionDebug] Crew damage blocked: " + dmg);
         }
-
-        super.DamageCrew(dmg);
     }
 
-	// Prevents damage from vehicle-impact style events while preserving other vanilla damage flow.
-	override void EEHitBy(TotalDamageResult damageResult, int damageType, EntityAI source, int component, string dmgZone, string ammo, vector modelPos, float speedCoef)
-	{
-		super.EEHitBy(damageResult, damageType, source, component, dmgZone, ammo, modelPos, speedCoef);
-
-		if (!GetGame().IsServer() || !WastelandSettings.Get().EnableNoVehicleDamage)
-			return;
-
-        bool isVehicleRelated = false;
-        if (!source)
-        {
-            // Contact events can report null source depending on physics/event ordering.
-            isVehicleRelated = true;
-        }
-        else
-        {
-            if (source.IsInherited(Transport) || source.IsInherited(CarScript) || source == this)
-                isVehicleRelated = true;
-        }
-
-        if (!isVehicleRelated)
-            return;
-
-        string srcType = "null";
-        if (source)
-            srcType = source.GetType();
-        WLM_LogCollision("EEHitBy intercepted type=" + damageType.ToString() + " zone=" + dmgZone + " source=" + srcType);
-
-        // Force reset global health if hit
-        SetHealth(GetMaxHealth());
-
-        // Explicitly fix common zones that might not reset with global health (like windows)
-        SetHealth("WindowFront", "Health", GetMaxHealth("WindowFront", "Health"));
-        SetHealth("WindowBack", "Health", GetMaxHealth("WindowBack", "Health"));
-        SetHealth("WindowLeft", "Health", GetMaxHealth("WindowLeft", "Health"));
-        SetHealth("WindowRight", "Health", GetMaxHealth("WindowRight", "Health"));
-        SetHealth("Window", "Health", GetMaxHealth("Window", "Health"));
-
-        // Re-apply attachment and tire protection immediately on hit.
-        Maintenance_RepairTires();
-        Maintenance_RepairAttachments();
-	}
-    
-	override void SetActions()
-	{
-		super.SetActions();
-		AddAction(ActionFlipVehicle);
-	}
-
-    override void EEKilled(Object killer)
-	{
-	}
-	///Credits to Inkihh for the smoke effect
-    override void EOnPostSimulate(IEntity other, float timeSlice)
+    override void SetActions()
     {
-        m_Time += timeSlice;
-        
-        if (!GetGame().IsDedicatedServer())
-        {
-            float carSpeed = GetVelocity(this).Length();
-            for (int i = 0; i < WheelCount(); i++)
-            {
-                EffWheelSmoke eff = m_WheelSmokeFx.Get(i);
-                int ptrEff = m_WheelSmokePtcFx.Get(i);
-                bool haveParticle = false;
-
-                CarWheel wheel = CarWheel.Cast(WheelGetEntity(i));
-                if (wheel && WheelHasContact(i))
-                {
-                    float wheelSpeed = WheelGetAngularVelocity(i) * wheel.GetRadius();
-
-                    vector wheelPos = WheelGetContactPosition(i);
-                    vector wheelVel = dBodyGetVelocityAt(this, wheelPos);
-
-                    vector transform[3];
-                    transform[2] = WheelGetDirection(i);
-                    transform[1] = vector.Up;
-                    transform[0] = transform[2] * transform[1];
-
-                    wheelVel = wheelVel.InvMultiply3(transform);
-
-                    float bodySpeed = wheelVel[2];
-
-                    bool applyEffect = false;
-                    if ((wheelSpeed > 0 && bodySpeed > 0) || (wheelSpeed < 0 && bodySpeed < 0))
-                    {
-                        applyEffect = Math.AbsFloat(wheelSpeed) > Math.AbsFloat(bodySpeed) + EffWheelSmoke.WHEEL_SMOKE_THRESHOLD;
-                    }
-                    else
-                    {
-                        applyEffect = Math.AbsFloat(wheelSpeed) > EffWheelSmoke.WHEEL_SMOKE_THRESHOLD;
-                    }
-
-                    if (applyEffect)
-                    {
-                        haveParticle = true;
-
-                        string surface;
-                        GetGame().SurfaceGetType(wheelPos[0], wheelPos[2], surface);
-                        wheelPos = WorldToModel(wheelPos);
-
-                        if (!SEffectManager.IsEffectExist(ptrEff))
-                        {
-                            eff = new EffWheelSmoke();
-                            eff.SetSurface(surface);
-                            ptrEff = SEffectManager.PlayOnObject(eff, this, wheelPos, "0 1 -1");
-                            eff.SetCurrentLocalPosition(wheelPos);
-                            m_WheelSmokeFx.Set(i, eff);
-                            m_WheelSmokePtcFx.Set(i, ptrEff);
-                        }
-                        else
-                        {
-                            if (!eff.IsPlaying() && Surface.GetWheelParticleID(surface) != 0)
-                                eff.Start();
-                            eff.SetSurface(surface);
-                            eff.SetCurrentLocalPosition(wheelPos);
-                        }
-                    }
-                }
-
-                if (!haveParticle)
-                {
-                    if (eff && eff.IsPlaying())
-                        eff.Stop();
-                }
-            }
-        }
+        super.SetActions();
+        AddAction(ActionFlipVehicle);
     }
 }
