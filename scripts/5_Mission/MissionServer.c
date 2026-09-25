@@ -3,7 +3,10 @@ modded class MissionServer
     override void OnInit()
     {
         super.OnInit();
-        WastelandSettings.Get().Load();
-        Print("[WastelandMod] Config loaded.");
+        WastelandSettings.Get();
+        if (WastelandSettings.WLM_LoadSucceeded)
+            Print("[WastelandMod] Config loaded.");
+        else
+            Print("[WastelandMod] Config NOT loaded; features disabled. Check settings.json.");
     }
 }

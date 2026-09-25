@@ -1,26 +1,13 @@
 modded class DrowningMdfr
 {
-    // Override the OnTick method to prevent health/shock depletion
-    // Override the OnTick method to prevent health/shock depletion
     override void OnTick(PlayerBase player, float deltaT)
     {    
-        if (!WastelandSettings.Get().EnablePlayerDrowningProtection)
-        {
-            super.OnTick(player, deltaT);
+        // This is a defensive guard for a modifier that was active when the
+        // player entered a vehicle. Activation/deactivation use the same
+        // predicate, so on-foot swimming always remains vanilla.
+        if (WastelandSettings.Get().EnablePlayerDrowningProtection && player && player.GetCommand_Vehicle())
             return;
-        }
 
-        // Still keep track of stamina and sound effects
-        if (player.GetStaminaHandler().GetStamina() <= 0)
-        {
-            // Remove these lines that cause damage:
-            // player.AddHealth("","",deltaT * -CfgGameplayHandler.GetHealthDepletionSpeed());
-            // player.AddHealth("","Shock",deltaT * -CfgGameplayHandler.GetShockDepletionSpeed());
-            
-            // Still play the drowning sound for immersion
-           // player.RequestSoundEventEx(EPlayerSoundEventID.DROWNING_PAIN, false, EPlayerSoundEventParam.HIGHEST_PRIORITY);
-        }
+        super.OnTick(player, deltaT);
     }
-    
-    // Keep all other vanilla functionality unchanged
 };
