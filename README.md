@@ -5,7 +5,7 @@ Server-configurable vehicle protection, maintenance and recovery for DayZ. The a
 ## Behavior
 
 - Vehicle protection gates damage and maintains direct vehicle attachments. Native collision processing, battery updates, simulation, lights and death handling remain intact.
-- Occupant collision protection is independent of vehicle protection. Pedestrian and infected collision protection suppresses native transport-hit registration, not unrelated hit/death notifications.
+- Collision protection is independent of vehicle protection. The player setting covers occupants and pedestrians; infected and animals each have their own setting. These guards suppress stock transport-hit damage, not unrelated hit/death notifications.
 - Infinite battery uses the native energy-addition path, including displayed quantity updates. Turning it off retains vanilla alternator charging and headlight drain.
 - Infinite fuel also replenishes coolant, oil and brake fluid.
 - The master vehicle protection setting includes tire maintenance. The separate tire option also works when master protection is off.
@@ -28,11 +28,14 @@ The server creates `$profile:WLM_NoVehicleDamageComplete/settings.json` on first
   "EnablePlayerDrowningProtection": true,
   "EnablePlayerCollisionProtection": true,
   "EnableZombieCollisionProtection": true,
+  "EnableAnimalCollisionProtection": true,
   "EnableVehicleWaterDamageProtection": true,
   "DebugRepairLogs": false,
   "DebugCollisionLogs": false
 }
 ```
+The three collision settings work independently of `EnableNoVehicleDamage`. On first load of an older valid settings file, the server adds `"EnableAnimalCollisionProtection": true` while preserving its existing entries and writes the untouched original to `$profile:WLM_NoVehicleDamageComplete/settings.before-animal-protection.json`. The script log prints a success or warning message. Set the new field to `false` to opt out. New settings files include it by default.
+
 ## Credits and support
 
 The Songsmith — core logic and development. Inkihh — original wheel-smoke contributions (current effects use the stock lifecycle).
