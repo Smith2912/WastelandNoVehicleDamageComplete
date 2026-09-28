@@ -7,5 +7,15 @@ modded class ZombieBase
         super.EOnContact(other, extra);
     }
 
+    // Block the stock TransportHit damage entry point even when another
+    // vehicle script calls it without going through this EOnContact override.
+    override void RegisterTransportHit(Transport transport)
+    {
+        if (GetGame().IsServer() && transport && WastelandSettings.Get().EnableZombieCollisionProtection)
+            return;
+
+        super.RegisterTransportHit(transport);
+    }
+
     // Keep hit/death animation notifications and other mods' non-transport contacts.
 }

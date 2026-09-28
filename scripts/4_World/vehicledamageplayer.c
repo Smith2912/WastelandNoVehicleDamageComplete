@@ -27,5 +27,18 @@ modded class DayZPlayerImplement
 		super.EOnContact(other, extra);
 	}
 
+	// Stock EOnContact reaches this method to apply TransportHit damage. Guard the
+	// damage entry point too, including calls made by other vehicle scripts.
+	override void RegisterTransportHit(Transport transport)
+	{
+		if (GetGame().IsServer() && transport && WastelandSettings.Get().EnablePlayerCollisionProtection)
+		{
+			WLM_LogPlayerCollision("RegisterTransportHit blocked transport=" + transport.GetType());
+			return;
+		}
+
+		super.RegisterTransportHit(transport);
+	}
+
     // Keep EEHitBy native: it is an after-damage notification, not a veto.
 }
